@@ -4,6 +4,8 @@ import { Dashboard } from './Dashboard'
 import { TableManagement } from '../order/TableManagement'
 import { NewOrderFlow } from '../order/NewOrderFlow'
 import { OpenTickets } from '../order/OpenTickets'
+import { PaymentScreen } from '../order/PaymentScreen'
+import { TicketLookup } from '../order/TicketLookup'
 import { Reservations } from '../Reservations'
 import { CustomerManagement } from '../CustomerManagement'
 import { Reports } from '../reports/Reports'
@@ -30,6 +32,8 @@ export const MainApp = () => {
           <Route path="/tables" element={<TableManagement />} />
           <Route path="/new-order" element={<NewOrderFlow />} />
           <Route path="/open-tickets" element={<OpenTickets />} />
+          <Route path="/payment" element={<PaymentScreen />} />
+          <Route path="/ticket-lookup" element={<TicketLookup />} />
           <Route path="/reservations" element={<Reservations />} />
           <Route path="/customers" element={<CustomerManagement />} />
           <Route path="/reports" element={<Reports />} />
