@@ -6,6 +6,20 @@ DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS reservations CASCADE;
 DROP TABLE IF EXISTS payments CASCADE;
 DROP TABLE IF EXISTS tables CASCADE;
+DROP TABLE IF EXISTS ticket_sequences CASCADE;
+
+-- Ticket sequence management table for generating sequential ticket numbers
+CREATE TABLE IF NOT EXISTS ticket_sequences (
+  id SERIAL PRIMARY KEY,
+  current_number INTEGER NOT NULL DEFAULT 0,
+  prefix VARCHAR(10) DEFAULT 'TKT',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert initial ticket sequence
+INSERT INTO ticket_sequences (current_number, prefix) VALUES (0, 'TKT')
+ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS tables (
   id SERIAL PRIMARY KEY,
@@ -35,12 +49,15 @@ CREATE TABLE IF NOT EXISTS menu_items (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Orders
+-- Orders with ticket number
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
+  ticket_number VARCHAR(20) UNIQUE NOT NULL,
   table_id INTEGER REFERENCES tables(id),
+  order_type VARCHAR(20) DEFAULT 'dine-in' CHECK (order_type IN ('dine-in', 'takeaway', 'delivery')),
   status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'preparing', 'ready', 'served', 'cancelled')),
   total_amount DECIMAL(10,2) DEFAULT 0,
+  payment_status VARCHAR(20) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'paid', 'refunded')),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -112,13 +129,58 @@ INSERT INTO menu_items (category_id, name, description, price) VALUES
 (4, 'Coffee', 'Freshly brewed coffee', 3.99),
 (4, 'Soft Drinks', 'Assorted soft drinks', 2.99);
 
-ALTER TABLE tables ADD COLUMN table_number INTEGER UNIQUE NOT NULL;
-
 -- Enable RLS if not already enabled
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ticket_sequences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
 -- Allow all users to select (read) for development
 CREATE POLICY "Allow read for all"
   ON users
   FOR SELECT
   USING (true);
+
+CREATE POLICY "Allow all for ticket_sequences"
+  ON ticket_sequences
+  FOR ALL
+  USING (true);
+
+CREATE POLICY "Allow all for orders"
+  ON orders
+  FOR ALL
+  USING (true);
+
+CREATE POLICY "Allow all for order_items"
+  ON order_items
+  FOR ALL
+  USING (true);
+
+CREATE POLICY "Allow all for payments"
+  ON payments
+  FOR ALL
+  USING (true);
+
+-- Function to generate next ticket number
+CREATE OR REPLACE FUNCTION generate_ticket_number()
+RETURNS TEXT AS $$
+DECLARE
+    next_number INTEGER;
+    ticket_prefix TEXT;
+    padded_number TEXT;
+BEGIN
+    -- Get and update the current ticket sequence
+    UPDATE ticket_sequences 
+    SET current_number = current_number + 1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = 1
+    RETURNING current_number, prefix INTO next_number, ticket_prefix;
+    
+    -- Pad the number with zeros (e.g., 0001, 0002, etc.)
+    padded_number := LPAD(next_number::TEXT, 4, '0');
+    
+    -- Return formatted ticket number
+    RETURN ticket_prefix || padded_number;
+END;
+$$ LANGUAGE plpgsql;
