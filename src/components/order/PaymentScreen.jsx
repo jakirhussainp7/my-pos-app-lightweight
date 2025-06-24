@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ticketService } from '../../services/ticketService'
+import { thermalPrinterService } from '../../services/thermalPrinterService'
 
 export const PaymentScreen = () => {
   const [ticketNumber, setTicketNumber] = useState('')
@@ -9,6 +10,7 @@ export const PaymentScreen = () => {
   const [loading, setLoading] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [settledTicketData, setSettledTicketData] = useState(null)
 
   const orderTotal = order?.total_amount || 0
   const change = amountPaid ? Math.max(0, parseFloat(amountPaid) - orderTotal) : 0
@@ -49,7 +51,8 @@ export const PaymentScreen = () => {
         method: paymentMethod
       }
 
-      await ticketService.processPayment(ticketNumber, paymentData)
+      const result = await ticketService.processPayment(ticketNumber, paymentData)
+      setSettledTicketData(result)
       setPaymentSuccess(true)
     } catch (error) {
       console.error('Error processing payment:', error)
@@ -59,7 +62,34 @@ export const PaymentScreen = () => {
     }
   }
 
-  const generateReceipt = async () => {
+  const generateThermalReceipt = async () => {
+    try {
+      // Use settled ticket data if available, otherwise generate fresh
+      let html
+      if (settledTicketData && settledTicketData.thermalData) {
+        html = settledTicketData.html || 
+               thermalPrinterService.generateThermalHTML(settledTicketData.receiptData, settledTicketData.thermalData)
+      } else {
+        const thermalReceipt = await ticketService.generateThermalReceipt(ticketNumber)
+        html = thermalReceipt.html
+      }
+      
+      const receiptWindow = window.open('', '_blank')
+      receiptWindow.document.write(html)
+      receiptWindow.document.close()
+      
+      // Automatically trigger print dialog
+      receiptWindow.focus()
+      setTimeout(() => {
+        receiptWindow.print()
+      }, 500)
+    } catch (error) {
+      console.error('Error generating thermal receipt:', error)
+      alert('Error generating thermal receipt. Please try again.')
+    }
+  }
+
+  const generateRegularReceipt = async () => {
     try {
       const receipt = await ticketService.generateReceipt(ticketNumber)
       const receiptWindow = window.open('', '_blank')
@@ -162,6 +192,7 @@ export const PaymentScreen = () => {
     setAmountPaid('')
     setPaymentSuccess(false)
     setError('')
+    setSettledTicketData(null)
   }
 
   if (paymentSuccess) {
@@ -189,16 +220,22 @@ export const PaymentScreen = () => {
           </div>
           <div className="space-y-3">
             <button
-              onClick={generateReceipt}
-              className="w-full btn-primary"
+              onClick={generateThermalReceipt}
+              className="w-full btn-primary text-lg py-3"
             >
-              Print Receipt
+              🖨️ Print Thermal Receipt (80mm)
+            </button>
+            <button
+              onClick={generateRegularReceipt}
+              className="w-full btn-secondary"
+            >
+              📄 Print Regular Receipt
             </button>
             <button
               onClick={startNewPayment}
               className="w-full btn-secondary"
             >
-              New Payment
+              💳 New Payment
             </button>
           </div>
         </div>

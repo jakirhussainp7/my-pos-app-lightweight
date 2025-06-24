@@ -9,6 +9,7 @@ import { TicketLookup } from '../order/TicketLookup'
 import { Reservations } from '../Reservations'
 import { CustomerManagement } from '../CustomerManagement'
 import { Reports } from '../reports/Reports'
+import { SettledTicketsReport } from '../reports/SettledTicketsReport'
 import { BackOffice } from '../admin/BackOffice'
 import { Settings } from '../Settings'
 import { useIdle } from '../../hooks/useIdle'
@@ -37,6 +38,7 @@ export const MainApp = () => {
           <Route path="/reservations" element={<Reservations />} />
           <Route path="/customers" element={<CustomerManagement />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/reports/settled-tickets" element={<SettledTicketsReport />} />
           <Route path="/backoffice" element={<BackOffice />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
