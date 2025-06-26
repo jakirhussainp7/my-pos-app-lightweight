@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS reservations CASCADE;
 DROP TABLE IF EXISTS payments CASCADE;
 DROP TABLE IF EXISTS tables CASCADE;
 DROP TABLE IF EXISTS ticket_sequences CASCADE;
+DROP TABLE IF EXISTS settled_tickets CASCADE;
 
 -- Ticket sequence management table for generating sequential ticket numbers
 CREATE TABLE IF NOT EXISTS ticket_sequences (
@@ -15,6 +16,24 @@ CREATE TABLE IF NOT EXISTS ticket_sequences (
   prefix VARCHAR(10) DEFAULT 'TKT',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Settled tickets tracking table for thermal printing and record keeping
+CREATE TABLE IF NOT EXISTS settled_tickets (
+  id SERIAL PRIMARY KEY,
+  ticket_number VARCHAR(20) UNIQUE NOT NULL,
+  order_id INTEGER NOT NULL,
+  total_amount DECIMAL(10,2) NOT NULL,
+  payment_method VARCHAR(20) NOT NULL,
+  settled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  thermal_receipt_data JSONB,
+  receipt_printed BOOLEAN DEFAULT false,
+  print_count INTEGER DEFAULT 0,
+  cashier_id INTEGER,
+  table_number INTEGER,
+  order_type VARCHAR(20),
+  customer_count INTEGER DEFAULT 1,
+  notes TEXT
 );
 
 -- Insert initial ticket sequence
@@ -135,6 +154,7 @@ ALTER TABLE ticket_sequences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settled_tickets ENABLE ROW LEVEL SECURITY;
 
 -- Allow all users to select (read) for development
 CREATE POLICY "Allow read for all"
@@ -162,6 +182,11 @@ CREATE POLICY "Allow all for payments"
   FOR ALL
   USING (true);
 
+CREATE POLICY "Allow all for settled_tickets"
+  ON settled_tickets
+  FOR ALL
+  USING (true);
+
 -- Function to generate next ticket number
 CREATE OR REPLACE FUNCTION generate_ticket_number()
 RETURNS TEXT AS $$
@@ -184,3 +209,101 @@ BEGIN
     RETURN ticket_prefix || padded_number;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Function to settle a ticket (called when payment is completed)
+CREATE OR REPLACE FUNCTION settle_ticket(
+    p_ticket_number TEXT,
+    p_payment_method TEXT,
+    p_cashier_id INTEGER DEFAULT NULL,
+    p_thermal_receipt_data JSONB DEFAULT NULL
+)
+RETURNS INTEGER AS $$
+DECLARE
+    v_order_record RECORD;
+    v_settled_ticket_id INTEGER;
+BEGIN
+    -- Get order details
+    SELECT o.*, t.table_number INTO v_order_record
+    FROM orders o
+    LEFT JOIN tables t ON o.table_id = t.id
+    WHERE o.ticket_number = p_ticket_number
+    AND o.payment_status = 'paid';
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Order not found or not paid for ticket number: %', p_ticket_number;
+    END IF;
+    
+    -- Insert into settled_tickets
+    INSERT INTO settled_tickets (
+        ticket_number,
+        order_id,
+        total_amount,
+        payment_method,
+        thermal_receipt_data,
+        cashier_id,
+        table_number,
+        order_type
+    ) VALUES (
+        p_ticket_number,
+        v_order_record.id,
+        v_order_record.total_amount,
+        p_payment_method,
+        p_thermal_receipt_data,
+        p_cashier_id,
+        v_order_record.table_number,
+        v_order_record.order_type
+    )
+    RETURNING id INTO v_settled_ticket_id;
+    
+    RETURN v_settled_ticket_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get settled tickets for reporting
+CREATE OR REPLACE FUNCTION get_settled_tickets_report(
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL,
+    p_payment_method TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    ticket_number TEXT,
+    total_amount DECIMAL(10,2),
+    payment_method TEXT,
+    settled_at TIMESTAMP,
+    table_number INTEGER,
+    order_type TEXT,
+    print_count INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        st.ticket_number,
+        st.total_amount,
+        st.payment_method,
+        st.settled_at,
+        st.table_number,
+        st.order_type,
+        st.print_count
+    FROM settled_tickets st
+    WHERE 
+        (p_start_date IS NULL OR DATE(st.settled_at) >= p_start_date)
+        AND (p_end_date IS NULL OR DATE(st.settled_at) <= p_end_date)
+        AND (p_payment_method IS NULL OR st.payment_method = p_payment_method)
+    ORDER BY st.settled_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to increment print count
+CREATE OR REPLACE FUNCTION increment_print_count(ticket_num TEXT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE settled_tickets 
+    SET print_count = print_count + 1,
+        receipt_printed = true
+    WHERE ticket_number = ticket_num;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Add columns to orders table
+ALTER TABLE orders ADD COLUMN order_type VARCHAR(20) DEFAULT 'dine-in';
+ALTER TABLE orders ADD COLUMN payment_status VARCHAR(20) DEFAULT 'pending';

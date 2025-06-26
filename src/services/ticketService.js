@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase'
+import { thermalPrinterService } from './thermalPrinterService'
 
 export const ticketService = {
   // Generate a new ticket number
@@ -183,8 +184,8 @@ export const ticketService = {
     }
   },
 
-  // Process payment for an order
-  async processPayment(ticketNumber, paymentData) {
+  // Process payment for an order and settle the ticket
+  async processPayment(ticketNumber, paymentData, cashierId = null) {
     try {
       // Get the order first
       const order = await this.getOrderByTicketNumber(ticketNumber)
@@ -220,7 +221,30 @@ export const ticketService = {
         throw updateError
       }
 
-      return payment
+      // Generate receipt data and thermal receipt for the settled ticket
+      const receiptData = await this.generateReceipt(ticketNumber)
+      receiptData.payments = [payment] // Add payment info to receipt
+      
+      const thermalData = await thermalPrinterService.generateThermalReceiptData(
+        ticketNumber, 
+        receiptData
+      )
+
+      // Save as settled ticket
+      await thermalPrinterService.saveSettledTicket(
+        ticketNumber,
+        paymentData.method,
+        receiptData,
+        thermalData,
+        cashierId
+      )
+
+      return {
+        payment,
+        receiptData,
+        thermalData,
+        isSettled: true
+      }
     } catch (error) {
       console.error('Error in processPayment:', error)
       throw error
@@ -255,6 +279,52 @@ export const ticketService = {
       return receipt
     } catch (error) {
       console.error('Error in generateReceipt:', error)
+      throw error
+    }
+  },
+
+  // Generate thermal receipt for settled ticket
+  async generateThermalReceipt(ticketNumber) {
+    try {
+      const receiptData = await this.generateReceipt(ticketNumber)
+      const thermalData = await thermalPrinterService.generateThermalReceiptData(
+        ticketNumber,
+        receiptData
+      )
+      
+      const html = thermalPrinterService.generateThermalHTML(receiptData, thermalData)
+      
+      return {
+        receiptData,
+        thermalData,
+        html
+      }
+    } catch (error) {
+      console.error('Error in generateThermalReceipt:', error)
+      throw error
+    }
+  },
+
+  // Get all settled tickets
+  async getSettledTickets(filters = {}) {
+    try {
+      return await thermalPrinterService.getSettledTicketsReport(
+        filters.startDate,
+        filters.endDate,
+        filters.paymentMethod
+      )
+    } catch (error) {
+      console.error('Error in getSettledTickets:', error)
+      throw error
+    }
+  },
+
+  // Reprint a settled ticket
+  async reprintTicket(ticketNumber) {
+    try {
+      return await thermalPrinterService.reprintSettledTicket(ticketNumber)
+    } catch (error) {
+      console.error('Error in reprintTicket:', error)
       throw error
     }
   }

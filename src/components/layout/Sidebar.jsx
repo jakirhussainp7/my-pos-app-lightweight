@@ -33,6 +33,8 @@ export const Sidebar = () => {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: HomeIcon },
     { name: 'Tables', href: '/tables', icon: TableIcon },
+    { name: 'Menu', href: '/menu', icon: PlusIcon },
+    { name: 'Receipt Settings', href: '/receipt-settings', icon: SettingsIcon },
     { name: 'New Order', href: '/new-order', icon: PlusIcon },
     { name: 'Open Tickets', href: '/open-tickets', icon: TicketIcon },
     { name: 'Payment', href: '/payment', icon: PaymentIcon },

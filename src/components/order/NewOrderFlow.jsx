@@ -10,6 +10,7 @@ export const NewOrderFlow = () => {
   const [tables, setTables] = useState([])
   const [loading, setLoading] = useState(false)
   const [orderSuccess, setOrderSuccess] = useState(null)
+  const [formError, setFormError] = useState('')
 
   useEffect(() => {
     loadMenuItems()
@@ -79,8 +80,19 @@ export const NewOrderFlow = () => {
   const total = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
 
   const handlePlaceOrder = async () => {
-    if (!selectedTable || orderItems.length === 0) return
-
+    setFormError('')
+    if (!orderType) {
+      setFormError('Please select an order type.')
+      return
+    }
+    if (!selectedTable) {
+      setFormError('Please select a table.')
+      return
+    }
+    if (orderItems.length === 0) {
+      setFormError('Please add at least one item to the order.')
+      return
+    }
     setLoading(true)
     try {
       const orderData = {
@@ -94,23 +106,18 @@ export const NewOrderFlow = () => {
           totalPrice: item.price * item.quantity
         }))
       }
-
       const result = await ticketService.createOrderWithTicket(orderData)
-      
       setOrderSuccess({
         ticketNumber: result.ticketNumber,
         orderId: result.order.id,
         total: total
       })
-
-      // Reset form
       setOrderItems([])
       setSelectedTable('')
       setOrderType('')
-
     } catch (error) {
       console.error('Error placing order:', error)
-      alert('Error placing order. Please try again.')
+      setFormError('Error placing order. Please try again or contact admin.')
     } finally {
       setLoading(false)
     }
@@ -197,6 +204,9 @@ export const NewOrderFlow = () => {
           Change
         </button>
       </div>
+      {formError && (
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{formError}</div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Menu Section */}
         <div className="bg-white rounded-lg shadow p-6">
